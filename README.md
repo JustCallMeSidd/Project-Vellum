@@ -100,6 +100,7 @@ To run the project in development mode or customize the source code:
    npm run dist:dir
    ```
    *This packages the application into `release/win-unpacked/`, updating `Vellum.exe` with your changes.*
+<img width="1912" height="1020" alt="image" src="https://github.com/user-attachments/assets/120e57b1-4609-4fad-bc32-9907ed926457" />
 
 ---
 
