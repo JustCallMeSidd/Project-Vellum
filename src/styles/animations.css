@@ -1,0 +1,115 @@
+/* ═══════════════════════════════════════════════════════════
+   VELLUM DESKTOP — Animations & Keyframes
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Fade in ─────────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Slide up (modals, panels) ───────────────────────────── */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+/* ── Slide in from left (sidebar) ────────────────────────── */
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+
+/* ── Slide in from right ─────────────────────────────────── */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+/* ── Pop in (messages) ───────────────────────────────────── */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* ── Pulse glow (streaming indicator) ───────────────────── */
+@keyframes pulse-glow {
+  0%,100% { opacity: 0.6; box-shadow: 0 0  8px rgba(124, 58, 237, 0.4); }
+  50%      { opacity: 1;   box-shadow: 0 0 20px rgba(124, 58, 237, 0.8); }
+}
+
+/* ── Typing dots ─────────────────────────────────────────── */
+@keyframes typing-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%           { transform: scale(1.0); opacity: 1;   }
+}
+
+/* ── Shimmer (loading skeleton) ──────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-surface) 25%,
+    var(--bg-hover)   50%,
+    var(--bg-surface) 75%
+  );
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Spin ────────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin { animation: spin 1s linear infinite; }
+
+/* ── Success flash ───────────────────────────────────────── */
+@keyframes flash-success {
+  0%   { background: rgba(16, 185, 129, 0.2); }
+  100% { background: transparent; }
+}
+
+/* ── Toast slide in ──────────────────────────────────────── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(100%) scale(0.9); }
+  to   { opacity: 1; transform: translateX(0)    scale(1);   }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0)    scale(1);   }
+  to   { opacity: 0; transform: translateX(100%) scale(0.9); }
+}
+
+/* ── Cursor blink (streaming) ────────────────────────────── */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.streaming-cursor::after {
+  content: '▋';
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent-bright);
+  animation: cursor-blink 0.9s ease infinite;
+  font-size: 0.85em;
+}
+
+/* ── Sidebar item entrance ───────────────────────────────── */
+@keyframes sidebar-item-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Neon border pulse ───────────────────────────────────── */
+@keyframes neon-pulse {
+  0%, 100% { border-color: var(--accent-border); }
+  50%       { border-color: var(--accent-bright); box-shadow: var(--shadow-accent); }
+}
