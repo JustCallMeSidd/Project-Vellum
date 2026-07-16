@@ -3,6 +3,7 @@
 Vellum is a premium, high-performance desktop client for **OpenRouter**, bringing over 600+ AI models (including GPT-4o, Claude 3.5 Sonnet, Gemini Pro, and Llama 3) into a single, unified interface on your PC.
 
 Designed with rich aesthetics, glassmorphism, responsive panels, and smooth micro-animations, Vellum provides a state-of-the-art chat environment with native system integration.
+<img width="1912" height="1020" alt="image" src="https://github.com/user-attachments/assets/1c9b6efb-be76-4d25-8b95-db1a5bfde69d" />
 
 ---
 
@@ -100,7 +101,6 @@ To run the project in development mode or customize the source code:
    npm run dist:dir
    ```
    *This packages the application into `release/win-unpacked/`, updating `Vellum.exe` with your changes.*
-<img width="1912" height="1020" alt="image" src="https://github.com/user-attachments/assets/120e57b1-4609-4fad-bc32-9907ed926457" />
 
 ---
 
