@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
-import type { ChatMessage } from '../../types/index'
+import type { ChatMessage, MessagePart } from '../../types/index'
 import './MessageBubble.css'
 
 // ── Markdown renderer with syntax highlighting ────────
@@ -30,33 +30,153 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+// ── Render a single multimodal part ──────────────────
+function RenderPart({ part }: { part: MessagePart }) {
+  const [audioExpanded, setAudioExpanded] = useState(false)
+  const [embeddingExpanded, setEmbeddingExpanded] = useState(false)
+  const [imgZoom, setImgZoom] = useState(false)
+
+  if (part.type === 'text') {
+    return (
+      <div
+        className="message-content markdown"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text) }}
+      />
+    )
+  }
+
+  if (part.type === 'image_url') {
+    return (
+      <div className="media-part image-part">
+        <img
+          src={part.url}
+          alt={part.fileName ?? 'Attached image'}
+          className={`media-image ${imgZoom ? 'zoomed' : ''}`}
+          onClick={() => setImgZoom((v) => !v)}
+          title="Click to zoom"
+        />
+        {imgZoom && (
+          <div className="media-zoom-overlay" onClick={() => setImgZoom(false)}>
+            <img src={part.url} alt={part.fileName} className="media-image-zoomed" />
+          </div>
+        )}
+        {part.fileName && (
+          <div className="media-caption">{part.fileName}</div>
+        )}
+      </div>
+    )
+  }
+
+  if (part.type === 'audio' || part.type === 'tts_audio') {
+    const src = `data:${part.mimeType};base64,${part.data}`
+    const label = part.type === 'tts_audio'
+      ? `🔊 Text-to-Speech${part.voice ? ` · ${part.voice}` : ''}`
+      : `🎵 ${part.fileName ?? 'Audio file'}`
+    return (
+      <div className="media-part audio-part">
+        <div className="audio-header" onClick={() => setAudioExpanded((v) => !v)}>
+          <span>{label}</span>
+          <svg className={`chevron ${audioExpanded ? 'open' : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+        {audioExpanded && (
+          <audio controls className="audio-player" src={src}>
+            Your browser does not support audio playback.
+          </audio>
+        )}
+        {part.type === 'audio' && (part as { transcript?: string }).transcript && (
+          <div className="audio-transcript">
+            <span className="transcript-label">Transcript:</span>
+            {(part as { transcript?: string }).transcript}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (part.type === 'video_url') {
+    return (
+      <div className="media-part video-part">
+        <div className="video-url-chip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+          </svg>
+          <span>Video URL attached</span>
+          <a href={part.url} className="video-url-link" onClick={(e) => { e.preventDefault(); window.vellum.openExternal(part.url) }}>
+            {part.url.length > 50 ? part.url.slice(0, 47) + '…' : part.url}
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  if (part.type === 'embedding') {
+    const preview = part.vectors.slice(0, 8)
+    return (
+      <div className="media-part embedding-part">
+        <div className="embedding-header" onClick={() => setEmbeddingExpanded((v) => !v)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+          <span>Embedding · <strong>{part.dimension}</strong> dimensions · <code>{part.model}</code></span>
+          <svg className={`chevron ${embeddingExpanded ? 'open' : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+        {embeddingExpanded && (
+          <div className="embedding-vectors">
+            <div className="embedding-preview">
+              [{preview.map((v, i) => (
+                <span key={i} className="embedding-value">{v.toFixed(4)}{i < preview.length - 1 ? ', ' : ''}</span>
+              ))}
+              {part.vectors.length > 8 && <span className="embedding-more">… +{part.vectors.length - 8} more</span>}]
+            </div>
+            <div className="embedding-stats">
+              Min: {Math.min(...part.vectors).toFixed(4)} · Max: {Math.max(...part.vectors).toFixed(4)} · Dims: {part.dimension}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
 interface Props {
   message: ChatMessage
   isLast: boolean
   isStreaming: boolean
   onRegenerate?: () => void
+  onTTS?: (text: string) => void
 }
 
-export function MessageBubble({ message, isLast, isStreaming, onRegenerate }: Props) {
+export function MessageBubble({ message, isLast, isStreaming, onRegenerate, onTTS }: Props) {
   const [copied, setCopied] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const isUser      = message.role === 'user'
   const isAssistant = message.role === 'assistant'
 
-  // Attach copy buttons to all code blocks after render
+  // Has multimodal parts?
+  const hasParts = message.parts && message.parts.length > 0
+  // Text content for copy & TTS
+  const textContent = hasParts
+    ? (message.parts ?? []).filter((p): p is Extract<MessagePart, { type: 'text' }> => p.type === 'text').map((p) => p.text).join('\n')
+    : message.content
+
+  // Attach copy buttons to code blocks
   useEffect(() => {
     if (!contentRef.current) return
     const pres = contentRef.current.querySelectorAll('pre')
     pres.forEach((pre) => {
-      if (pre.querySelector('.code-copy-btn')) return // Already attached
-
+      if (pre.querySelector('.code-copy-btn')) return
       const code = pre.querySelector('code')
       const lang = code?.className?.replace('hljs language-', '') ?? 'code'
 
-      // Header bar
       const header = document.createElement('div')
       header.className = 'code-block-header'
-
       const langSpan = document.createElement('span')
       langSpan.textContent = lang
       header.appendChild(langSpan)
@@ -74,10 +194,10 @@ export function MessageBubble({ message, isLast, isStreaming, onRegenerate }: Pr
       header.appendChild(btn)
       pre.insertBefore(header, pre.firstChild)
     })
-  }, [message.content])
+  }, [message.content, message.parts])
 
   const copyMessage = async () => {
-    await navigator.clipboard.writeText(message.content)
+    await navigator.clipboard.writeText(textContent)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -97,8 +217,14 @@ export function MessageBubble({ message, isLast, isStreaming, onRegenerate }: Pr
       )}
 
       <div className={`message-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'} ${message.error ? 'error-bubble' : ''}`}>
-        {/* Content */}
-        {isUser ? (
+        {/* Content — multimodal or plain text */}
+        {hasParts ? (
+          <div className="message-parts">
+            {(message.parts ?? []).map((part, idx) => (
+              <RenderPart key={idx} part={part} />
+            ))}
+          </div>
+        ) : isUser ? (
           <div className="message-content user-content">{message.content}</div>
         ) : (
           <div
@@ -115,8 +241,8 @@ export function MessageBubble({ message, isLast, isStreaming, onRegenerate }: Pr
             <span className="message-model">{message.model.split('/').pop()}</span>
           )}
 
-          {/* Actions */}
           <div className="message-actions">
+            {/* Copy */}
             <button
               className="msg-action-btn"
               onClick={copyMessage}
@@ -134,6 +260,23 @@ export function MessageBubble({ message, isLast, isStreaming, onRegenerate }: Pr
                 </svg>
               )}
             </button>
+
+            {/* TTS button — only for text messages */}
+            {textContent && onTTS && !isStreaming && (
+              <button
+                className="msg-action-btn tts-btn"
+                onClick={() => onTTS(textContent)}
+                title="Listen to this message (Text-to-Speech)"
+                id={`tts-msg-${message.id}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+              </button>
+            )}
+
+            {/* Regenerate */}
             {onRegenerate && (
               <button
                 className="msg-action-btn"

@@ -1,4 +1,7 @@
-import type { ModelInfo, ChatRequest } from '../../src/types/index'
+import type {
+  ModelInfo, ChatRequest, ChatMessage, MessagePart,
+  EmbeddingRequest, EmbeddingResult, TranscriptionRequest, TTSRequest,
+} from '../../src/types/index'
 
 const BASE_URL = 'https://openrouter.ai/api/v1'
 
@@ -25,6 +28,56 @@ export async function fetchAllModels(): Promise<ModelInfo[]> {
 export async function fetchModelInfo(modelId: string): Promise<ModelInfo | null> {
   const models = await fetchAllModels()
   return models.find((m) => m.id === modelId) ?? null
+}
+
+// ──────────────────────────────────────────────────────────
+// Convert ChatMessage to OpenRouter API message format
+// Handles both plain text and multimodal parts
+// ──────────────────────────────────────────────────────────
+function toAPIMessage(msg: ChatMessage): Record<string, unknown> {
+  // If there are multimodal parts, build content array
+  if (msg.parts && msg.parts.length > 0) {
+    const contentParts: unknown[] = []
+    for (const part of msg.parts) {
+      if (part.type === 'text') {
+        contentParts.push({ type: 'text', text: part.text })
+      } else if (part.type === 'image_url') {
+        contentParts.push({
+          type: 'image_url',
+          image_url: { url: part.url },
+        })
+      } else if (part.type === 'audio') {
+        // Some models accept audio as an image_url style data URI
+        contentParts.push({
+          type: 'image_url',
+          image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+        })
+        // Also add text indicating transcription if available
+        if (part.transcript) {
+          contentParts.push({
+            type: 'text',
+            text: `[Audio file: ${part.fileName ?? 'audio'} — Transcription: "${part.transcript}"]`,
+          })
+        }
+      } else if (part.type === 'video_url') {
+        contentParts.push({
+          type: 'image_url',
+          image_url: { url: part.url },
+        })
+      }
+      // embedding and tts_audio parts are not sent to API — they are output only
+    }
+
+    // Append any plain text content
+    if (msg.content) {
+      contentParts.push({ type: 'text', text: msg.content })
+    }
+
+    return { role: msg.role, content: contentParts }
+  }
+
+  // Plain text
+  return { role: msg.role, content: msg.content }
 }
 
 // ──────────────────────────────────────────────────────────
@@ -56,7 +109,7 @@ export async function streamChat(
       },
       body: JSON.stringify({
         model,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: messages.map(toAPIMessage),
         stream: true,
         temperature: options?.temperature ?? 0.7,
         ...(options?.maxTokens ? { max_tokens: options.maxTokens } : {}),
@@ -75,7 +128,6 @@ export async function streamChat(
     const decoder = new TextDecoder()
     const reader = res.body.getReader()
 
-    // Read stream chunk by chunk
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -92,11 +144,6 @@ export async function streamChat(
           if (delta) {
             fullText += delta
             callbacks.onToken(requestId, delta)
-          }
-          // Check for finish reason
-          const finishReason = json?.choices?.[0]?.finish_reason
-          if (finishReason === 'stop' || finishReason === 'length') {
-            // Normal completion — continue reading until [DONE]
           }
         } catch {
           // Partial / non-JSON lines are normal at SSE chunk boundaries
@@ -126,4 +173,119 @@ export function stopChat(requestId: string): void {
     controller.abort()
     activeControllers.delete(requestId)
   }
+}
+
+// ──────────────────────────────────────────────────────────
+// Embeddings
+// ──────────────────────────────────────────────────────────
+export async function fetchEmbeddings(req: EmbeddingRequest): Promise<EmbeddingResult> {
+  const res = await fetch(`${BASE_URL}/embeddings`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${req.apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://vellum.app',
+      'X-Title': 'Vellum Desktop',
+    },
+    body: JSON.stringify({
+      model: req.model,
+      input: req.input,
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Embedding request failed: ${res.status} ${errText}`)
+  }
+
+  const data = await res.json() as { data: Array<{ embedding: number[] }>; model: string }
+  const vectors = data.data[0]?.embedding ?? []
+  return { vectors, dimension: vectors.length, model: data.model ?? req.model }
+}
+
+// ──────────────────────────────────────────────────────────
+// Audio Transcription (Whisper)
+// ──────────────────────────────────────────────────────────
+export async function transcribeAudio(req: TranscriptionRequest): Promise<{ text: string }> {
+  // Convert base64 to Buffer for multipart upload
+  const audioBuffer = Buffer.from(req.audioBase64, 'base64')
+  const ext = req.mimeType.split('/')[1]?.split(';')[0] ?? 'mp3'
+
+  // Build multipart/form-data manually (Node.js FormData not available in Electron main)
+  const boundary = `----VellumBoundary${Date.now()}`
+  const CRLF = '\r\n'
+
+  const header = [
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="file"; filename="${req.fileName}"`,
+    `Content-Type: ${req.mimeType}`,
+    '',
+    '',
+  ].join(CRLF)
+
+  const modelPart = [
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="model"`,
+    '',
+    req.model,
+    '',
+  ].join(CRLF)
+
+  const footer = `--${boundary}--${CRLF}`
+
+  const bodyParts = [
+    Buffer.from(header, 'utf-8'),
+    audioBuffer,
+    Buffer.from(CRLF + modelPart + footer, 'utf-8'),
+  ]
+  const body = Buffer.concat(bodyParts)
+
+  const res = await fetch(`${BASE_URL}/audio/transcriptions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${req.apiKey}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'HTTP-Referer': 'https://vellum.app',
+      'X-Title': 'Vellum Desktop',
+    },
+    body,
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Transcription failed: ${res.status} ${errText}`)
+  }
+
+  const data = await res.json() as { text: string }
+  return { text: data.text ?? '' }
+}
+
+// ──────────────────────────────────────────────────────────
+// Text-to-Speech
+// ──────────────────────────────────────────────────────────
+export async function textToSpeech(req: TTSRequest): Promise<{ audioBase64: string; mimeType: string }> {
+  const res = await fetch(`${BASE_URL}/audio/speech`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${req.apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://vellum.app',
+      'X-Title': 'Vellum Desktop',
+    },
+    body: JSON.stringify({
+      model: req.model,
+      input: req.text,
+      voice: req.voice ?? 'alloy',
+      response_format: 'mp3',
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`TTS failed: ${res.status} ${errText}`)
+  }
+
+  const arrayBuffer = await res.arrayBuffer()
+  const base64 = Buffer.from(arrayBuffer).toString('base64')
+  return { audioBase64: base64, mimeType: 'audio/mpeg' }
 }

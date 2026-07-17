@@ -3,15 +3,17 @@ import type {
   Conversation,
   ConversationMeta,
   ChatMessage,
+  MessagePart,
   ModelInfo,
   Settings,
 } from './types/index'
-import { TitleBar }     from './components/TitleBar/TitleBar'
-import { Sidebar }      from './components/Sidebar/Sidebar'
-import { ChatPanel }    from './components/ChatPanel/ChatPanel'
-import { ModelBrowser } from './components/ModelBrowser/ModelBrowser'
-import { SettingsPanel }from './components/Settings/Settings'
-import { Toast }        from './components/Toast/Toast'
+import { TitleBar }      from './components/TitleBar/TitleBar'
+import { Sidebar }       from './components/Sidebar/Sidebar'
+import { ChatPanel }     from './components/ChatPanel/ChatPanel'
+import { ModelBrowser }  from './components/ModelBrowser/ModelBrowser'
+import { SettingsPanel } from './components/Settings/Settings'
+import { Toast }         from './components/Toast/Toast'
+import { Onboarding }    from './components/Onboarding/Onboarding'
 
 // ── Helper: generate unique IDs ───────────────────────────
 function uid(): string {
@@ -33,23 +35,27 @@ interface ToastMessage {
 
 export default function App() {
   // ── App state ─────────────────────────────────────────
-  const [settings, setSettings]         = useState<Settings | null>(null)
+  const [settings, setSettings]           = useState<Settings | null>(null)
   const [conversations, setConversations] = useState<ConversationMeta[]>([])
-  const [activeConvId, setActiveConvId] = useState<string | null>(null)
-  const [activeConv, setActiveConv]     = useState<Conversation | null>(null)
-  const [models, setModels]             = useState<ModelInfo[]>([])
+  const [activeConvId, setActiveConvId]   = useState<string | null>(null)
+  const [activeConv, setActiveConv]       = useState<Conversation | null>(null)
+  const [models, setModels]               = useState<ModelInfo[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
 
   // ── UI state ──────────────────────────────────────────
   const [isModelBrowserOpen, setModelBrowserOpen] = useState(false)
   const [isSettingsOpen, setSettingsOpen]         = useState(false)
   const [toasts, setToasts]                       = useState<ToastMessage[]>([])
+  const [showOnboarding, setShowOnboarding]       = useState(false)
 
   // ── Streaming state ───────────────────────────────────
-  const [isStreaming, setIsStreaming]   = useState(false)
-  const [streamingText, setStreamingText] = useState('')
+  const [isStreaming, setIsStreaming]       = useState(false)
+  const [streamingText, setStreamingText]  = useState('')
   const streamRequestId = useRef<string | null>(null)
   const unsubscribers   = useRef<Array<() => void>>([])
+
+  // ── Current model info (for capability detection) ─────
+  const currentModelInfo = models.find((m) => m.id === (activeConv?.model ?? settings?.defaultModel)) ?? null
 
   // ────────────────────────────────────────────────────────
   // Boot: load settings + conversations
@@ -63,20 +69,19 @@ export default function App() {
       setSettings(s)
       setConversations(convs)
 
-      // Apply theme
       document.documentElement.setAttribute('data-theme', s.theme)
       document.documentElement.style.fontSize = `${s.fontSize}px`
 
-      // Open settings if no API key yet
+      // Show onboarding if no API key is configured
       if (!s.apiKey) {
-        setSettingsOpen(true)
+        setShowOnboarding(true)
       }
     }
     boot()
   }, [])
 
   // ────────────────────────────────────────────────────────
-  // Load models once settings are available
+  // Load models once settings + API key are available
   // ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!settings?.apiKey) return
@@ -107,6 +112,29 @@ export default function App() {
   }, [])
 
   // ────────────────────────────────────────────────────────
+  // Onboarding complete
+  // ────────────────────────────────────────────────────────
+  const handleOnboardingComplete = useCallback(async (apiKey: string, model: string) => {
+    if (!settings) return
+    const newSettings: Settings = {
+      ...settings,
+      apiKey,
+      defaultModel: model,
+    }
+    await window.vellum.saveSettings(newSettings)
+    setSettings(newSettings)
+    setShowOnboarding(false)
+    showToast('Welcome to Vellum! 🎉', 'success')
+
+    // Kick off model loading
+    setModelsLoading(true)
+    window.vellum.fetchAllModels()
+      .then(setModels)
+      .catch(() => {})
+      .finally(() => setModelsLoading(false))
+  }, [settings, showToast])
+
+  // ────────────────────────────────────────────────────────
   // Conversation management
   // ────────────────────────────────────────────────────────
   const createConversation = useCallback(async () => {
@@ -115,14 +143,11 @@ export default function App() {
     const newConv: Conversation = {
       id:           uid(),
       title:        'New conversation',
-      messages:     [
-        {
-          id: uid(),
-          role: 'system',
-          content: settings.defaultSystemPrompt,
-          timestamp: now,
-        },
-      ],
+      messages:     [{
+        id: uid(), role: 'system',
+        content: settings.defaultSystemPrompt,
+        timestamp: now,
+      }],
       model:        settings.defaultModel,
       systemPrompt: settings.defaultSystemPrompt,
       createdAt:    now,
@@ -149,15 +174,12 @@ export default function App() {
     if (!conv) return
     const updated = { ...conv, title, updatedAt: Date.now() }
     await window.vellum.saveConversation(updated)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, title } : c))
-    )
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)))
     if (activeConvId === id) setActiveConv(updated)
   }, [activeConvId])
 
   const persistConversation = useCallback(async (conv: Conversation) => {
     await window.vellum.saveConversation(conv)
-    // Refresh sidebar meta
     setConversations((prev) =>
       prev.map((c) =>
         c.id === conv.id
@@ -193,37 +215,68 @@ export default function App() {
   }, [])
 
   // ────────────────────────────────────────────────────────
-  // Send a message
+  // Send a message (supports multimodal parts)
   // ────────────────────────────────────────────────────────
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, parts?: MessagePart[]) => {
     if (!activeConv || !settings || isStreaming) return
 
     const requestId = uid()
     const now = Date.now()
 
-    // Append user message
-    const userMsg: ChatMessage = {
-      id: uid(), role: 'user', content, timestamp: now,
+    // If audio part, transcribe it first
+    let resolvedParts = parts ? [...parts] : undefined
+    if (resolvedParts) {
+      for (let i = 0; i < resolvedParts.length; i++) {
+        const part = resolvedParts[i]
+        if (part.type === 'audio' && part.data && !part.transcript) {
+          try {
+            showToast('Transcribing audio…', 'info')
+            const result = await window.vellum.requestTranscription({
+              apiKey: settings.apiKey,
+              model: 'openai/whisper-1',
+              audioBase64: part.data,
+              mimeType: part.mimeType,
+              fileName: part.fileName ?? 'audio.mp3',
+            })
+            resolvedParts[i] = { ...part, transcript: result.text }
+            if (!content) {
+              content = `[Audio transcription]: ${result.text}`
+            }
+          } catch (err) {
+            showToast('Audio transcription failed — sending as text instead', 'error')
+          }
+        }
+      }
     }
+
+    // Build display content for the user message
+    const displayContent = resolvedParts
+      ? resolvedParts.filter((p): p is Extract<MessagePart, { type: 'text' }> => p.type === 'text').map((p) => p.text).join('\n') || content
+      : content
+
+    const userMsg: ChatMessage = {
+      id: uid(), role: 'user',
+      content: displayContent,
+      parts: resolvedParts,
+      timestamp: now,
+    }
+
     const convWithUser: Conversation = {
       ...activeConv,
       messages:  [...activeConv.messages, userMsg],
       updatedAt: now,
-      // Auto-title from first user message
       title: activeConv.messages.filter(m => m.role !== 'system').length === 0
-        ? deriveTitle(content)
+        ? deriveTitle(displayContent)
         : activeConv.title,
     }
     setActiveConv(convWithUser)
 
-    // Set up streaming state
     setIsStreaming(true)
     setStreamingText('')
     streamRequestId.current = requestId
 
     let accumulated = ''
 
-    // Register IPC listeners
     clearStreamListeners()
     unsubscribers.current = [
       window.vellum.onChatToken((data) => {
@@ -296,7 +349,6 @@ export default function App() {
       }),
     ]
 
-    // Fire the request
     window.vellum.startChat({
       requestId,
       apiKey:   settings.apiKey,
@@ -309,9 +361,80 @@ export default function App() {
       },
     })
 
-    // Persist the user message immediately
     persistConversation(convWithUser)
   }, [activeConv, settings, isStreaming, clearStreamListeners, persistConversation, showToast])
+
+  // ────────────────────────────────────────────────────────
+  // Embeddings
+  // ────────────────────────────────────────────────────────
+  const handleEmbedding = useCallback(async (text: string) => {
+    if (!settings || !activeConv) return
+    showToast('Generating embedding…', 'info')
+    try {
+      const result = await window.vellum.requestEmbedding({
+        apiKey: settings.apiKey,
+        model: 'openai/text-embedding-3-small',
+        input: text,
+      })
+
+      const embeddingMsg: ChatMessage = {
+        id: uid(), role: 'assistant',
+        content: `Embedding generated (${result.dimension} dimensions)`,
+        parts: [
+          { type: 'text', text: `✅ Embedding generated for input text.` },
+          { type: 'embedding', vectors: result.vectors, dimension: result.dimension, model: result.model },
+        ],
+        timestamp: Date.now(),
+        model: result.model,
+      }
+      const newConv: Conversation = {
+        ...activeConv,
+        messages: [...activeConv.messages, embeddingMsg],
+        updatedAt: Date.now(),
+      }
+      setActiveConv(newConv)
+      persistConversation(newConv)
+      showToast(`Embedding: ${result.dimension} dimensions`, 'success')
+    } catch (err) {
+      showToast('Embedding failed — check your API key', 'error')
+    }
+  }, [settings, activeConv, persistConversation, showToast])
+
+  // ────────────────────────────────────────────────────────
+  // Text-to-Speech
+  // ────────────────────────────────────────────────────────
+  const handleTTS = useCallback(async (text: string) => {
+    if (!settings || !activeConv) return
+    showToast('Generating speech…', 'info')
+    try {
+      const result = await window.vellum.requestTTS({
+        apiKey: settings.apiKey,
+        model: 'openai/tts-1',
+        text,
+        voice: 'alloy',
+      })
+
+      const ttsMsg: ChatMessage = {
+        id: uid(), role: 'assistant',
+        content: '🔊 Audio generated',
+        parts: [
+          { type: 'tts_audio', data: result.audioBase64, mimeType: result.mimeType, voice: 'alloy' },
+        ],
+        timestamp: Date.now(),
+        model: 'openai/tts-1',
+      }
+      const newConv: Conversation = {
+        ...activeConv,
+        messages: [...activeConv.messages, ttsMsg],
+        updatedAt: Date.now(),
+      }
+      setActiveConv(newConv)
+      persistConversation(newConv)
+      showToast('Speech ready — click the audio player to listen', 'success')
+    } catch (err) {
+      showToast('TTS failed — make sure your API key has TTS access', 'error')
+    }
+  }, [settings, activeConv, persistConversation, showToast])
 
   // ────────────────────────────────────────────────────────
   // Stop generation
@@ -331,7 +454,6 @@ export default function App() {
     const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
     if (!lastUser) return
 
-    // Remove last assistant message
     const trimmed = [...activeConv.messages]
     const lastIdx = trimmed.map((m) => m.id).lastIndexOf(
       [...activeConv.messages].reverse().find((m) => m.role === 'assistant')?.id ?? ''
@@ -340,7 +462,7 @@ export default function App() {
 
     const newConv = { ...activeConv, messages: trimmed, updatedAt: Date.now() }
     setActiveConv(newConv)
-    sendMessage(lastUser.content)
+    sendMessage(lastUser.content, lastUser.parts)
   }, [activeConv, isStreaming, sendMessage])
 
   // ────────────────────────────────────────────────────────
@@ -354,7 +476,6 @@ export default function App() {
     setSettingsOpen(false)
     showToast('Settings saved', 'success')
 
-    // Reload models if API key changed
     if (newSettings.apiKey && newSettings.apiKey !== settings?.apiKey) {
       setModelsLoading(true)
       window.vellum.fetchAllModels()
@@ -396,6 +517,11 @@ export default function App() {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden' }}>
+      {/* Onboarding overlay — shown only on first launch (no API key) */}
+      {showOnboarding && (
+        <Onboarding onComplete={handleOnboardingComplete} />
+      )}
+
       {/* Custom title bar */}
       <TitleBar
         title={activeConv?.title ?? 'Vellum'}
@@ -418,6 +544,7 @@ export default function App() {
         <ChatPanel
           conversation={activeConv}
           settings={settings}
+          currentModelInfo={currentModelInfo}
           isStreaming={isStreaming}
           streamingText={streamingText}
           onSendMessage={sendMessage}
@@ -427,6 +554,8 @@ export default function App() {
           onRegenerate={regenerateLast}
           onExport={exportConversation}
           onNewChat={createConversation}
+          onTTS={handleTTS}
+          onEmbedding={handleEmbedding}
         />
       </div>
 

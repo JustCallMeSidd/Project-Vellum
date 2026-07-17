@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Conversation, Settings } from '../../types/index'
+import type { Conversation, Settings, ModelInfo, MessagePart } from '../../types/index'
 import { MessageBubble }   from '../MessageBubble/MessageBubble'
 import { InputBar }        from '../InputBar/InputBar'
 import { TypingIndicator } from '../TypingIndicator/TypingIndicator'
@@ -8,20 +8,24 @@ import './ChatPanel.css'
 interface Props {
   conversation: Conversation | null
   settings: Settings
+  currentModelInfo?: ModelInfo | null
   isStreaming: boolean
   streamingText: string
-  onSendMessage: (content: string) => void
+  onSendMessage: (content: string, parts?: MessagePart[]) => void
   onStopGeneration: () => void
   onChangeModel: (modelId: string) => void
   onOpenModelBrowser: () => void
   onRegenerate: () => void
   onExport: (format: 'md' | 'json') => void
   onNewChat: () => void
+  onTTS?: (text: string) => void
+  onEmbedding?: (text: string) => void
 }
 
 export function ChatPanel({
   conversation,
   settings,
+  currentModelInfo,
   isStreaming,
   streamingText,
   onSendMessage,
@@ -31,6 +35,8 @@ export function ChatPanel({
   onRegenerate,
   onExport,
   onNewChat,
+  onTTS,
+  onEmbedding,
 }: Props) {
   const scrollRef  = useRef<HTMLDivElement>(null)
   const bottomRef  = useRef<HTMLDivElement>(null)
@@ -174,6 +180,7 @@ export function ChatPanel({
                 ? onRegenerate
                 : undefined
             }
+            onTTS={onTTS}
           />
         ))}
 
@@ -215,11 +222,15 @@ export function ChatPanel({
       {/* Input bar */}
       <InputBar
         currentModel={conversation.model}
+        currentModelInfo={currentModelInfo}
         isStreaming={isStreaming}
         sendOnEnter={settings.sendOnEnter}
         onSend={onSendMessage}
         onStop={onStopGeneration}
         onOpenModelBrowser={onOpenModelBrowser}
+        apiKey={settings.apiKey}
+        onEmbedding={onEmbedding}
+        onTTS={onTTS}
       />
     </div>
   )

@@ -149,3 +149,207 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ── Multimodal parts container ──────────────────────── */
+.message-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── TTS button ──────────────────────────────────────── */
+.tts-btn {
+  color: rgba(167,139,250,0.6) !important;
+}
+.tts-btn:hover {
+  color: #a78bfa !important;
+  background: rgba(167,139,250,0.1) !important;
+}
+
+/* ── Media parts ─────────────────────────────────────── */
+.media-part {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Image */
+.image-part {
+  display: inline-block;
+  position: relative;
+}
+
+.media-image {
+  max-width: 320px;
+  max-height: 280px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  cursor: zoom-in;
+  border: 1px solid var(--border);
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: block;
+}
+
+.media-image:hover {
+  transform: scale(1.01);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.media-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: fade-in 0.15s ease;
+}
+
+.media-image-zoomed {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: var(--radius-lg);
+  object-fit: contain;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+
+.media-caption {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  padding: 4px 2px 0;
+}
+
+/* Audio */
+.audio-part {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-width: 260px;
+}
+
+.audio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+
+.audio-header:hover { background: rgba(255,255,255,0.04); }
+
+.chevron {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.chevron.open { transform: rotate(180deg); }
+
+.audio-player {
+  width: 100%;
+  padding: 8px 14px 12px;
+  display: block;
+}
+
+/* Webkit audio player dark theme adjustment */
+audio::-webkit-media-controls-panel {
+  background: var(--bg-elevated);
+}
+
+.audio-transcript {
+  padding: 8px 14px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  line-height: 1.5;
+}
+
+.transcript-label {
+  font-weight: var(--fw-medium);
+  color: var(--accent-bright);
+  margin-right: 6px;
+}
+
+/* Video URL chip */
+.video-part {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.video-url-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.video-url-link {
+  color: var(--accent-bright);
+  text-decoration: none;
+  font-family: monospace;
+  font-size: var(--fs-xs);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.video-url-link:hover { text-decoration: underline; }
+
+/* Embedding */
+.embedding-part {
+  background: rgba(99,102,241,0.05);
+  border: 1px solid rgba(99,102,241,0.15);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.embedding-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.embedding-header:hover { background: rgba(255,255,255,0.03); }
+.embedding-header svg { color: rgba(129,140,248,0.7); flex-shrink: 0; }
+.embedding-header strong { color: #a78bfa; }
+.embedding-header code {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.embedding-vectors {
+  padding: 8px 14px 12px;
+  border-top: 1px solid rgba(99,102,241,0.1);
+  animation: fade-in 0.2s ease;
+}
+
+.embedding-preview {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11.5px;
+  color: rgba(165,163,255,0.8);
+  line-height: 1.8;
+  word-break: break-all;
+}
+
+.embedding-value { color: #a5b4fc; }
+.embedding-more  { color: var(--text-muted); }
+
+.embedding-stats {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
