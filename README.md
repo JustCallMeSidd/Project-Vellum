@@ -389,6 +389,6 @@ MIT — free to use, modify, and distribute.
 
 Made with 💜 using Electron · React · TypeScript · OpenRouter
 
-**[⭐ Star this repo]([Vellum](https://github.com/JustCallMeSidd/Vellum/tree/main)])** if you find it useful!
+**[⭐ Star this repo](https://github.com/JustCallMeSidd/Vellum/tree/main) if you find it useful!**
 
 </div>
