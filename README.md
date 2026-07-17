@@ -389,6 +389,6 @@ MIT — free to use, modify, and distribute.
 
 Made with 💜 using Electron · React · TypeScript · OpenRouter
 
-**[⭐ Star this repo](https://github.com/YOUR_USERNAME/vellum-desktop)** if you find it useful!
+**[⭐ Star this repo]([https://github.com/YOUR_USERNAME/vellum-desktop](https://github.com/JustCallMeSidd/Vellum))** if you find it useful!
 
 </div>
